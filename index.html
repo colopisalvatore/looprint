@@ -501,7 +501,7 @@
 <div class="container">
     <div class="header-row">
         <div>
-            <h1 data-lang="title">LOOPRINT</h1>
+            <h1 data-lang="title">LOOPRINT (Beta)</h1>
             <p class="subtitle" data-lang="subtitle">
                 Automated multi-loop G-code builder for Bambu Lab P1/P1S. Supports G-code and 3MF files.
             </p>
@@ -796,6 +796,9 @@
                 <p>
                     Start and end code are added automatically for all file types. You don't need any special printer profiles or modifications.
                 </p>
+                <p>
+                    <strong>Note:</strong> Maximum file size: 150MB
+                </p>
             </div>
 
             <div class="instructions-section">
@@ -943,11 +946,11 @@
             <div class="instructions-section">
                 <h3>Troubleshooting</h3>
                 <ul>
-                    <li><strong>File won't upload:</strong> Ensure it's a valid G-code (.gcode, .gco, .g, .txt) or 3MF (.3mf) file</li>
+                    <li><strong>File won't upload:</strong> Ensure it's a valid G-code (.gcode, .gco, .g, .txt) or 3MF (.3mf) file. Maximum file size: 150MB</li>
                     <li><strong>Wrong placement detected:</strong> Check that your model is clearly on one side of the bed. You can manually change push direction in advanced settings if needed</li>
                     <li><strong>Push-off doesn't work:</strong> Verify Brim is enabled and model is at bed edge. Use "Generate Test File" to test push-off sequence</li>
                     <li><strong>Temperature issues:</strong> All temperatures come from your original file - check your slicer settings. Start code automatically extracts and uses correct temperatures</li>
-                    <li><strong>File too large:</strong> Large files may take longer to process - be patient. Progress bar shows processing status</li>
+                    <li><strong>File too large:</strong> Maximum file size is 150MB. Large files may take longer to process - be patient. Progress bar shows processing status</li>
                     <li><strong>Too many loops warning:</strong> If you set more than 100 loops, you'll get a warning. Recommended maximum is 50 loops</li>
                     <li><strong>Push lane offset auto-adjusted:</strong> If you see a warning about offset being adjusted, the value was too large for your model placement. Check the displayed maximum value</li>
                     <li><strong>Cooldown temperature warning:</strong> If set above 35°C, you'll see a warning about increased sticking risk</li>
@@ -1291,7 +1294,7 @@ M975 S1 ; turn on mech mode supression
     const MAX_PUSH_LANE_OFFSET = 60;     // Maximum offset (prevents excessive values)
     
     // File size limits
-    const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB
+    const MAX_FILE_SIZE = 150 * 1024 * 1024; // 150MB
     
     // Debug mode - set to false for production
     const DEBUG_MODE = false; // Set to true to enable console logging for debugging
@@ -1332,7 +1335,7 @@ M975 S1 ; turn on mech mode supression
 
     const LANG = {
         en: { 
-            title: "LOOPRINT", subtitle: "Automated multi-loop G-code builder for Bambu Lab P1/P1S. Supports G-code and 3MF files.",
+            title: "LOOPRINT (Beta)", subtitle: "Automated multi-loop G-code builder for Bambu Lab P1/P1S. Supports G-code and 3MF files.",
             step1Title: "1. Upload File",             step1Help: "Upload a G-code file (directly from slicer) or a 3MF file. Start and end code will be added automatically.",
             validationWarning: "✓ Push direction is automatically detected from model placement.", validationError: "Validation failed: Could not read or parse the file. Please ensure it is a valid G-code or 3MF file.",
             validationErrorLooprint: "Validation failed: This file has already been processed by Looprint. Please upload the original sliced file.",
@@ -1351,7 +1354,7 @@ M975 S1 ; turn on mech mode supression
             zOffsetErrorRange: "Offset must be between 5 mm and 120 mm.", zOffsetApplied: "Offset updated.", selectDirectionLabel: "Selected Push Direction:",
             optLeft: "Left", optCenter: "Center", optRight: "Right", endCenterTitle: "Center Push End G-code", endCenterDesc: "Pushes model from center zone towards front. Z height calculated automatically.",
             endRightTitle: "Right Push End G-code", endRightDesc: "Pushes model from right zone towards front. Z height calculated automatically.", endLeftTitle: "Left Push End G-code", endLeftDesc: "Pushes model from left zone towards front. Z height calculated automatically.",
-            copyBtn: "Copy G-code", fileError: "Please select a G-code or 3MF file.", loopsError: "Please enter a valid loop count (at least 1).", loopsTooManyError: "Too many loops. Maximum recommended: 100. Large files may cause memory issues.", skirtError: "Safety check failed: You must confirm that Brim was enabled and the model is placed at the edge of the bed.",
+            copyBtn: "Copy G-code", fileError: "Please select a G-code or 3MF file.", loopsError: "Please enter a valid loop count (at least 1).", loopsTooManyError: "Too many loops. Maximum recommended: 50. Large files may cause memory issues.", skirtError: "Safety check failed: You must confirm that Brim was enabled and the model is placed at the edge of the bed.",
             fileEmptyError: "The uploaded file appears to be empty or unreadable.", copySuccess: "Copied!", copyError: "Failed to copy.", bedPreviewTitle: "Bed Preview & Model Placement",
             bedPreviewText: "The zone with the green border is the selected push direction. In advanced mode, you can click any zone to change it after file upload.", bedPreviewFront: "FRONT", bedPreviewBack: "BACK", bedPreviewLeft: "LEFT", bedPreviewRight: "RIGHT",
             bedZoneCenter: "Center", bedZoneRight: "Right", bedZoneLeft: "Left", bedPreviewOffsetLabel: "Z push offset:", bedPreviewOffsetSuffix: "below top of print",
