@@ -107,6 +107,21 @@ Enable via ⚙️ **Show Advanced Settings**
 - Can be manually changed via bed preview zones
 - Warning shown if changed from auto-detected direction
 
+#### Push-off Speed
+- Speed of the push-off motion
+- **Default:** 300 mm/min
+- **Range:** 100 – 1000 mm/min
+- Lower = slower, safer for delicate prints
+
+#### Full Bed Sweep (optional)
+- Sweeps entire bed in 7 passes after push-off to clear debris
+- **Pattern:** Safe one-way back-to-front (7 passes across X-axis)
+- **Sweep Speed:** Default 300 mm/min (range: 100–1000 mm/min)
+- **Sweep Z Height:** Default 1 mm (bed level, range: 0.5–50 mm)
+- Always runs 7 passes with automatic spacing
+- Respects safe bed boundaries to avoid collisions
+- Can be tested separately with **Generate Sweep Test File** button
+
 #### Safety Confirmation (required)
 You must confirm that:
 - The model is sliced with **Brim**
@@ -116,6 +131,7 @@ You must confirm that:
 
 - Click **Generate Loop File** to create the full looped print
 - Or **Generate Test File** to test only the push-off sequence
+- Or **Generate Sweep Test File** (only visible when Full Bed Sweep is enabled) to test only the sweep sequence
 - Progress bar shows processing status
 - Download the generated file when complete
 
@@ -130,8 +146,9 @@ When generating a looped file, Looprint:
 3. Adds optimized custom start code
 4. Repeats the print G-code for each loop
 5. Inserts cooldown + push-off sequences between loops
-6. Adds custom end code
-7. Preserves all original temperatures and speeds
+6. Optionally adds full bed sweep sequence (if enabled)
+7. Adds custom end code
+8. Preserves all original temperatures and speeds
 
 ## Dynamic Multi-Lane Push System
 
@@ -161,10 +178,12 @@ After push-off, the hotend moves to a safe X position to avoid collisions.
 
 - Start with 2–3 loops for testing
 - Use **Generate Test File** to test push-off only
+- Use **Generate Sweep Test File** to test sweep sequence only (when Full Bed Sweep is enabled)
 - Keep the bed clean and well-leveled
 - Ensure strong first layer adhesion
 - **If prints stick:** Lower cooldown temperature slightly
 - **If prints release too easily:** Increase cooldown temperature slightly
+- **Full Bed Sweep** is useful for clearing debris between loops, especially with multiple prints
 
 ## Troubleshooting
 
