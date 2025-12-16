@@ -5,6 +5,8 @@
 Looprint is a free automated multi-loop G-code / 3MF builder for Bambu Lab printers.  
 It allows you to print many copies of the same model automatically by looping the print and pushing finished parts off the build plate.
 
+👉 **Web tool & instructions:** https://nickiandersen.github.io/looprint/
+
 No firmware mods.  
 No custom printer profiles.  
 No paywalls.
