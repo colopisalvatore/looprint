@@ -1343,8 +1343,8 @@
                                 <li>Wiggle sweep (X: -13 to 180mm)</li>
                                 <li>Automatic Y-axis push using Factorian's 41mm rule</li>
                                 <li>Z offset: 40mm below model top (Factorian's rule)</li>
-                                <li>⚠️ <strong>Requires 50mm clearance to the left of the bed for wiggle sweep</strong></li>
                                 <li>Automatic printer model detection from 3MF metadata (N1)</li>
+                                <li>⚠️ <strong>Requires 50mm clearance to the left of the bed (see Safety Reminders)</strong></li>
                             </ul>
                         </div>
                     </div>
@@ -1488,8 +1488,19 @@
                                     <li>Sweep Z Height: Default 1mm (bed level, range: 0.5-50mm)</li>
                                     <li>Always runs with automatic spacing</li>
                                     <li>Respects safe bed boundaries to avoid collisions</li>
-                                    <li><strong class="highlight">A1 Mini Warning:</strong> Requires 50mm clearance to the left of the bed (A1 print head is parked further left, no clearance needed)</li>
                                     <li>Can be tested separately with "Generate Sweep Test File" button (appears when enabled)</li>
+                                    <li><strong class="highlight">A1 Mini Warning:</strong> Requires 50mm clearance to the left of the bed (see Safety Reminders section)</li>
+                                </ul>
+                            </li>
+                            <li><strong>Enable Negative Z Push-Off (A1 only - advanced):</strong> Optional feature for low-height models
+                                <ul>
+                                    <li>Only available for A1 (not A1 Mini, P1, X1)</li>
+                                    <li>Uses negative Z values (Z-17) when nozzle head is at X-48 (far left)</li>
+                                    <li>Adds an additional push-off sequence after standard push-off</li>
+                                    <li><strong class="highlight">⚠️ WARNING:</strong> Only use if you do NOT have a Z-axis stiffener mod installed</li>
+                                    <li>Based on Factorian Designs custom end code logic</li>
+                                    <li>Should only be used when standard push-off is insufficient for very low parts</li>
+                                    <li>Use with caution - this is an advanced feature</li>
                                 </ul>
                             </li>
                             <li><strong class="highlight">Safety confirmation:</strong> Checkbox to confirm your model was sliced with Brim enabled. Brim replaces the standard purge line behavior, ensuring a clean and consistent first layer.</li>
@@ -1568,25 +1579,8 @@
                                 <strong>Safety Clear:</strong> After push-off, the hotend moves to a safe X position to avoid hitting the model on the next loop.
                             </p>
                             <p style="margin-top: 12px;">
-                                <strong>Full Bed Sweep (optional):</strong> If enabled, after push-off the hotend performs a full bed sweep in 7 passes (safe one-way back-to-front pattern) to clear any debris. The sweep runs at a low Z height (default 1mm) and respects safe bed boundaries to avoid collisions.
+                                <strong>X1/X1C Specific:</strong> Includes cutter sequence (`G1 Y-3`) before push-off. See "Supported Printers" section above for complete feature list.
                             </p>
-                            <p style="margin-top: 12px;">
-                                <strong>P1/P1S Specific Features:</strong>
-                            </p>
-                            <ul>
-                                <li><strong>Start Code:</strong> Optional filament flush can be enabled via "Enable Start Line Purge" checkbox (default: enabled - matches Factorian's P1 template)</li>
-                                <li><strong>M190 Cooldown:</strong> Waits for bed to cool before push-off sequence begins</li>
-                                <li><strong>End Sound:</strong> Plays completion sound sequence after push-off</li>
-                            </ul>
-                            <p style="margin-top: 12px;">
-                                <strong>X1/X1C Specific Features:</strong>
-                            </p>
-                            <ul>
-                                <li><strong>Start Code:</strong> Optional filament flush can be enabled via "Enable Start Line Purge" checkbox (default: enabled - matches Factorian's P1 template)</li>
-                                <li><strong>Cutter Sequence:</strong> Performs `G1 Y-3` before push-off (X1-specific requirement)</li>
-                                <li><strong>M190 Cooldown:</strong> Waits for bed to cool before push-off sequence begins</li>
-                                <li><strong>End Sound:</strong> Plays completion sound sequence after push-off</li>
-                            </ul>
                         </div>
                     </div>
                 </div>
@@ -1606,9 +1600,10 @@
                                 <li><strong>Factorian's 41mm rule:</strong> Z offset automatically set to 40mm below model top</li>
                                 <li><strong>No manual selection:</strong> Push direction is fully automatic</li>
                                 <li><strong>Wiggle sweep:</strong> X-axis wiggle from -48mm to 256mm to clear debris</li>
+                                <li><strong>Negative Z Push-Off (advanced, optional):</strong> Available in Advanced Settings for very low-height models. See Advanced Settings section for details and warnings.</li>
                             </ul>
                             <p>
-                                <strong>⚠️ Important:</strong> A1 Mini only: Wiggle sweep requires 50mm clearance to the left of the bed. A1 print head is parked further left (X-48), so no clearance needed for A1.
+                                <strong>⚠️ Important:</strong> A1 Mini only: Wiggle sweep requires 50mm clearance to the left of the bed. See "Important Safety Reminders" section for details.
                             </p>
                         </div>
                     </div>
@@ -1696,6 +1691,7 @@
                                 <li><strong>Wiggle sweep collision warning:</strong> Ensure 50mm clearance to the left of the bed. Check model placement in bed preview</li>
                                 <li><strong>Y-axis push not working:</strong> Verify model center Y is correctly calculated. Check that first_layer_center_no_wipe_tower is extracted correctly. Use "Generate Test File" to debug</li>
                                 <li><strong>Temperature offset:</strong> A1 automatically applies -4°C temperature offset</li>
+                                <li><strong>Negative Z Push-Off:</strong> Only available for A1 (not A1 Mini). See Advanced Settings section for details and warnings.</li>
                             </ul>
                         </div>
                     </div>
