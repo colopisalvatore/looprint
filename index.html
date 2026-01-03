@@ -6434,14 +6434,34 @@ M400 ; Wait for all motion to complete
                 if (maxZHeight !== null && !isNaN(maxZHeight)) {
                     // CRITICAL: Replace conditional logic FIRST (before variable replacement) to ensure structure is intact
                     // Factorian uses {if (max_layer_z ) > 41} with space - handle both formats
-                    activeEndCode = activeEndCode.replace(/\{if\s*\(?\s*max_layer_z\s*\)?\s*>\s*([\d\.]+)\}([\s\S]*?)(?:\{else\}([\s\S]*?))?\{endif\}/g, (match, threshold, ifBlock, elseBlock) => {
+                    // FIX: Make else block required (not optional) to ensure proper capture in JavaScript regex
+                    const beforeReplace = activeEndCode;
+                    
+                    // DEBUG: Show Z-Drop Logic section BEFORE replacement
+                    const zDropIndexBefore = activeEndCode.indexOf('Z-Drop Logic');
+                    if (zDropIndexBefore >= 0) {
+                        console.log('[Z-DROP DEBUG] BEFORE replacement - Z-Drop Logic section (first 300 chars):');
+                        console.log(activeEndCode.substring(zDropIndexBefore, zDropIndexBefore + 300));
+                    } else {
+                        console.warn('[Z-DROP DEBUG] WARNING: "Z-Drop Logic" comment not found in activeEndCode!');
+                    }
+                    
+                    activeEndCode = activeEndCode.replace(/\{if\s*\(?\s*max_layer_z\s*\)?\s*>\s*([\d\.]+)\}([\s\S]*?)\{else\}([\s\S]*?)\{endif\}/g, (match, threshold, ifBlock, elseBlock) => {
+                        console.log('[Z-DROP DEBUG] Conditional logic match found!');
+                        console.log('[Z-DROP DEBUG] Threshold:', threshold);
+                        console.log('[Z-DROP DEBUG] maxZHeight:', maxZHeight);
+                        console.log('[Z-DROP DEBUG] Full match length:', match.length);
+                        console.log('[Z-DROP DEBUG] ifBlock length:', ifBlock.length, 'content:', ifBlock.substring(0, 100));
+                        console.log('[Z-DROP DEBUG] elseBlock length:', elseBlock.length, 'content:', elseBlock.substring(0, 100));
+                        
                         const thresholdNum = parseFloat(threshold);
                         if (isNaN(thresholdNum)) {
-                            if (DEBUG_MODE) console.error(`Invalid threshold in conditional: ${match}`);
+                            console.error('[Z-DROP DEBUG] Invalid threshold:', match);
                             return match;
                         }
                         if (maxZHeight > thresholdNum) {
-                            return ifBlock.replace(/\{max_layer_z\}/g, maxZHeight.toFixed(2))
+                            // Don't trim - preserve newlines from template structure
+                            const result = ifBlock.replace(/\{max_layer_z\}/g, maxZHeight.toFixed(2))
                                          .replace(/\{max_layer_z\s*([+\-])\s*([\d\.]+)\}/g, (m, op, val) => {
                                              const numVal = parseFloat(val);
                                              if (isNaN(numVal)) {
@@ -6450,9 +6470,15 @@ M400 ; Wait for all motion to complete
                                              }
                                              const result = op === '+' ? maxZHeight + numVal : maxZHeight - numVal;
                                              return result.toFixed(2);
-                                         }).trim();
+                                         });
+                            console.log('[Z-DROP DEBUG] Using IF block, result:', result);
+                            return result;
                         } else {
-                            return elseBlock ? elseBlock.replace(/\{max_layer_z\}/g, maxZHeight.toFixed(2))
+                            // elseBlock is now guaranteed to be captured (not optional in regex)
+                            console.log('[Z-DROP DEBUG] Using ELSE block');
+                            console.log('[Z-DROP DEBUG] elseBlock before replace:', elseBlock);
+                            // Don't trim - preserve newlines from template structure
+                            const result = elseBlock.replace(/\{max_layer_z\}/g, maxZHeight.toFixed(2))
                                                           .replace(/\{max_layer_z\s*([+\-])\s*([\d\.]+)\}/g, (m, op, val) => {
                                                               const numVal = parseFloat(val);
                                                               if (isNaN(numVal)) {
@@ -6461,9 +6487,63 @@ M400 ; Wait for all motion to complete
                                                               }
                                                               const result = op === '+' ? maxZHeight + numVal : maxZHeight - numVal;
                                                               return result.toFixed(2);
-                                                          }).trim() : '';
+                                                          });
+                            console.log('[Z-DROP DEBUG] ELSE block result:', result);
+                            console.log('[Z-DROP DEBUG] ELSE block result length:', result.length);
+                            return result;
                         }
                     });
+                    if (beforeReplace !== activeEndCode) {
+                        console.log('[Z-DROP DEBUG] Replacement occurred!');
+                        
+                        // DEBUG: Show Z-Drop Logic section AFTER replacement
+                        const zDropIndexAfter = activeEndCode.indexOf('Z-Drop Logic');
+                        if (zDropIndexAfter >= 0) {
+                            console.log('[Z-DROP DEBUG] AFTER replacement - Z-Drop Logic section (first 300 chars):');
+                            console.log(activeEndCode.substring(zDropIndexAfter, zDropIndexAfter + 300));
+                        } else {
+                            console.warn('[Z-DROP DEBUG] WARNING: "Z-Drop Logic" comment not found after replacement!');
+                        }
+                        
+                        // Check if G1 Z1 F600 is actually in activeEndCode after replacement
+                        const g1Z1Count = (activeEndCode.match(/G1 Z1 F600/g) || []).length;
+                        if (g1Z1Count > 0) {
+                            console.log(`[Z-DROP DEBUG] ✓ G1 Z1 F600 found in activeEndCode after replacement (${g1Z1Count} occurrences)!`);
+                            
+                            // Find all positions of G1 Z1 F600
+                            let searchIndex = 0;
+                            const positions = [];
+                            while ((searchIndex = activeEndCode.indexOf('G1 Z1 F600', searchIndex)) !== -1) {
+                                positions.push(searchIndex);
+                                searchIndex += 10; // Move past this match
+                            }
+                            console.log('[Z-DROP DEBUG] G1 Z1 F600 positions:', positions);
+                            
+                            // Show context around each occurrence
+                            positions.forEach((pos, idx) => {
+                                const context = activeEndCode.substring(Math.max(0, pos - 100), pos + 100);
+                                console.log(`[Z-DROP DEBUG] G1 Z1 F600 #${idx + 1} context:`, context);
+                            });
+                        } else {
+                            console.error('[Z-DROP DEBUG] ✗ G1 Z1 F600 NOT found in activeEndCode after replacement!');
+                            console.log('[Z-DROP DEBUG] Checking what was actually replaced...');
+                            // Find the section around Z-Drop Logic
+                            const zDropIndex = activeEndCode.indexOf('Z-Drop Logic');
+                            if (zDropIndex >= 0) {
+                                const section = activeEndCode.substring(zDropIndex, zDropIndex + 500);
+                                console.log('[Z-DROP DEBUG] Section after replacement:', section);
+                            }
+                        }
+                    } else {
+                        console.warn('[Z-DROP DEBUG] WARNING: No replacement occurred! Conditional logic may not be in end code.');
+                        // Show what we're looking for
+                        const conditionalMatch = activeEndCode.match(/\{if\s*\(?\s*max_layer_z\s*\)?\s*>\s*([\d\.]+)\}/);
+                        if (conditionalMatch) {
+                            console.log('[Z-DROP DEBUG] Found conditional pattern but regex did not match. Pattern:', conditionalMatch[0]);
+                        } else {
+                            console.log('[Z-DROP DEBUG] No conditional pattern found in activeEndCode.');
+                        }
+                    }
                     // Now replace remaining {max_layer_z} variables (outside conditionals)
                     activeEndCode = activeEndCode.replace(/\{max_layer_z\}/g, maxZHeight.toFixed(2));
                     activeEndCode = activeEndCode.replace(/\{max_layer_z\s*([+\-])\s*([\d\.]+)\}/g, (match, op, val) => {
@@ -6491,14 +6571,22 @@ M400 ; Wait for all motion to complete
                         return result.toFixed(2);
                     });
                     // Evaluate conditionals with fallback value
-                    activeEndCode = activeEndCode.replace(/\{if\s*\(?\s*max_layer_z\s*\)?\s*>\s*([\d\.]+)\}([\s\S]*?)(?:\{else\}([\s\S]*?))?\{endif\}/g, (match, threshold, ifBlock, elseBlock) => {
+                    // FIX: Make else block required (not optional) to ensure proper capture in JavaScript regex
+                    const beforeReplaceFallback = activeEndCode;
+                    activeEndCode = activeEndCode.replace(/\{if\s*\(?\s*max_layer_z\s*\)?\s*>\s*([\d\.]+)\}([\s\S]*?)\{else\}([\s\S]*?)\{endif\}/g, (match, threshold, ifBlock, elseBlock) => {
+                        console.log('[Z-DROP DEBUG FALLBACK] Conditional logic match found!');
+                        console.log('[Z-DROP DEBUG FALLBACK] Threshold:', threshold);
+                        console.log('[Z-DROP DEBUG FALLBACK] maxZHeight:', maxZHeight);
+                        console.log('[Z-DROP DEBUG FALLBACK] elseBlock:', elseBlock.substring(0, 50));
+                        
                         const thresholdNum = parseFloat(threshold);
                         if (isNaN(thresholdNum)) {
-                            if (DEBUG_MODE) console.error(`Invalid threshold in conditional: ${match}`);
+                            console.error('[Z-DROP DEBUG FALLBACK] Invalid threshold:', match);
                             return match;
                         }
                         if (maxZHeight > thresholdNum) {
-                            return ifBlock.replace(/\{max_layer_z\}/g, maxZHeight.toFixed(2))
+                            // Don't trim - preserve newlines from template structure
+                            const result = ifBlock.replace(/\{max_layer_z\}/g, maxZHeight.toFixed(2))
                                          .replace(/\{max_layer_z\s*([+\-])\s*([\d\.]+)\}/g, (m, op, val) => {
                                              const numVal = parseFloat(val);
                                              if (isNaN(numVal)) {
@@ -6507,9 +6595,14 @@ M400 ; Wait for all motion to complete
                                              }
                                              const result = op === '+' ? maxZHeight + numVal : maxZHeight - numVal;
                                              return result.toFixed(2);
-                                         }).trim();
+                                         });
+                            console.log('[Z-DROP DEBUG FALLBACK] Using IF block, result:', result);
+                            return result;
                         } else {
-                            return elseBlock ? elseBlock.replace(/\{max_layer_z\}/g, maxZHeight.toFixed(2))
+                            // elseBlock is now guaranteed to be captured (not optional in regex)
+                            console.log('[Z-DROP DEBUG FALLBACK] Using ELSE block');
+                            // Don't trim - preserve newlines from template structure
+                            const result = elseBlock.replace(/\{max_layer_z\}/g, maxZHeight.toFixed(2))
                                                           .replace(/\{max_layer_z\s*([+\-])\s*([\d\.]+)\}/g, (m, op, val) => {
                                                               const numVal = parseFloat(val);
                                                               if (isNaN(numVal)) {
@@ -6518,9 +6611,16 @@ M400 ; Wait for all motion to complete
                                                               }
                                                               const result = op === '+' ? maxZHeight + numVal : maxZHeight - numVal;
                                                               return result.toFixed(2);
-                                                          }).trim() : '';
+                                                          });
+                            console.log('[Z-DROP DEBUG FALLBACK] ELSE block result:', result);
+                            return result;
                         }
                     });
+                    if (beforeReplaceFallback !== activeEndCode) {
+                        console.log('[Z-DROP DEBUG FALLBACK] Replacement occurred!');
+                    } else {
+                        console.warn('[Z-DROP DEBUG FALLBACK] WARNING: No replacement occurred!');
+                    }
                     // Show warning to user
                     showStatus("validationWarning", "warning", 
                         "Warning: Could not extract model height (max_z_height) from G-code header. " +
@@ -7401,6 +7501,7 @@ M400 ; Wait for all motion to complete
     }
 
     async function process3MFFile(file, loops) {
+        console.log('[PROCESS3MF] process3MFFile() called for file:', file.name);
         // Show loading state
         setLoadingState(true, "Processing 3MF file...");
         updateProgress(10, "Reading 3MF file...");
@@ -7743,14 +7844,33 @@ M400 ; Wait for all motion to complete
             if (maxZHeight !== null && !isNaN(maxZHeight)) {
                 // CRITICAL: Replace conditional logic FIRST (before variable replacement) to ensure structure is intact
                 // Factorian uses {if (max_layer_z ) > 41} with space - handle both formats
-                activeEndCode = activeEndCode.replace(/\{if\s*\(?\s*max_layer_z\s*\)?\s*>\s*([\d\.]+)\}([\s\S]*?)(?:\{else\}([\s\S]*?))?\{endif\}/g, (match, threshold, ifBlock, elseBlock) => {
+                // FIX: Make else block required (not optional) to ensure proper capture in JavaScript regex
+                const beforeReplaceGcode = activeEndCode;
+                
+                // DEBUG: Show Z-Drop Logic section BEFORE replacement
+                const zDropIndexBeforeGcode = activeEndCode.indexOf('Z-Drop Logic');
+                if (zDropIndexBeforeGcode >= 0) {
+                    console.log('[Z-DROP DEBUG GCODE] BEFORE replacement - Z-Drop Logic section (first 300 chars):');
+                    console.log(activeEndCode.substring(zDropIndexBeforeGcode, zDropIndexBeforeGcode + 300));
+                } else {
+                    console.warn('[Z-DROP DEBUG GCODE] WARNING: "Z-Drop Logic" comment not found in activeEndCode!');
+                }
+                
+                activeEndCode = activeEndCode.replace(/\{if\s*\(?\s*max_layer_z\s*\)?\s*>\s*([\d\.]+)\}([\s\S]*?)\{else\}([\s\S]*?)\{endif\}/g, (match, threshold, ifBlock, elseBlock) => {
+                    console.log('[Z-DROP DEBUG GCODE] Conditional logic match found!');
+                    console.log('[Z-DROP DEBUG GCODE] Threshold:', threshold);
+                    console.log('[Z-DROP DEBUG GCODE] maxZHeight:', maxZHeight);
+                    console.log('[Z-DROP DEBUG GCODE] Full match length:', match.length);
+                    console.log('[Z-DROP DEBUG GCODE] ifBlock length:', ifBlock.length, 'content:', ifBlock.substring(0, 100));
+                    console.log('[Z-DROP DEBUG GCODE] elseBlock length:', elseBlock.length, 'content:', elseBlock.substring(0, 100));
+                    
                     const thresholdNum = parseFloat(threshold);
                     if (isNaN(thresholdNum)) {
-                        if (DEBUG_MODE) console.error(`Invalid threshold in conditional: ${match}`);
+                        console.error('[Z-DROP DEBUG GCODE] Invalid threshold:', match);
                         return match;
                     }
                     if (maxZHeight > thresholdNum) {
-                        return ifBlock.replace(/\{max_layer_z\}/g, maxZHeight.toFixed(2))
+                        const result = ifBlock.replace(/\{max_layer_z\}/g, maxZHeight.toFixed(2))
                                      .replace(/\{max_layer_z\s*([+\-])\s*([\d\.]+)\}/g, (m, op, val) => {
                                          const numVal = parseFloat(val);
                                          if (isNaN(numVal)) {
@@ -7760,8 +7880,13 @@ M400 ; Wait for all motion to complete
                                          const result = op === '+' ? maxZHeight + numVal : maxZHeight - numVal;
                                          return result.toFixed(2);
                                      }).trim();
+                        console.log('[Z-DROP DEBUG GCODE] Using IF block, result:', result);
+                        return result;
                     } else {
-                        return elseBlock ? elseBlock.replace(/\{max_layer_z\}/g, maxZHeight.toFixed(2))
+                        // elseBlock is now guaranteed to be captured (not optional in regex)
+                        console.log('[Z-DROP DEBUG GCODE] Using ELSE block');
+                        // Don't trim - preserve newlines from template structure
+                        const result = elseBlock.replace(/\{max_layer_z\}/g, maxZHeight.toFixed(2))
                                                   .replace(/\{max_layer_z\s*([+\-])\s*([\d\.]+)\}/g, (m, op, val) => {
                                                       const numVal = parseFloat(val);
                                                       if (isNaN(numVal)) {
@@ -7770,9 +7895,64 @@ M400 ; Wait for all motion to complete
                                                       }
                                                       const result = op === '+' ? maxZHeight + numVal : maxZHeight - numVal;
                                                       return result.toFixed(2);
-                                                  }).trim() : '';
+                                                  });
+                        console.log('[Z-DROP DEBUG GCODE] ELSE block result:', result);
+                        console.log('[Z-DROP DEBUG GCODE] ELSE block result length:', result.length);
+                        console.log('[Z-DROP DEBUG GCODE] Returning result to replace conditional block');
+                        return result;
                     }
                 });
+                if (beforeReplaceGcode !== activeEndCode) {
+                    console.log('[Z-DROP DEBUG GCODE] Replacement occurred!');
+                    
+                    // DEBUG: Show Z-Drop Logic section AFTER replacement
+                    const zDropIndexAfterGcode = activeEndCode.indexOf('Z-Drop Logic');
+                    if (zDropIndexAfterGcode >= 0) {
+                        console.log('[Z-DROP DEBUG GCODE] AFTER replacement - Z-Drop Logic section (first 300 chars):');
+                        console.log(activeEndCode.substring(zDropIndexAfterGcode, zDropIndexAfterGcode + 300));
+                    } else {
+                        console.warn('[Z-DROP DEBUG GCODE] WARNING: "Z-Drop Logic" comment not found after replacement!');
+                    }
+                    
+                    // Check if G1 Z1 F600 is actually in activeEndCode after replacement
+                    const g1Z1CountGcode = (activeEndCode.match(/G1 Z1 F600/g) || []).length;
+                    if (g1Z1CountGcode > 0) {
+                        console.log(`[Z-DROP DEBUG GCODE] ✓ G1 Z1 F600 found in activeEndCode after replacement (${g1Z1CountGcode} occurrences)!`);
+                        
+                        // Find all positions of G1 Z1 F600
+                        let searchIndex = 0;
+                        const positions = [];
+                        while ((searchIndex = activeEndCode.indexOf('G1 Z1 F600', searchIndex)) !== -1) {
+                            positions.push(searchIndex);
+                            searchIndex += 10; // Move past this match
+                        }
+                        console.log('[Z-DROP DEBUG GCODE] G1 Z1 F600 positions:', positions);
+                        
+                        // Show context around each occurrence
+                        positions.forEach((pos, idx) => {
+                            const context = activeEndCode.substring(Math.max(0, pos - 100), pos + 100);
+                            console.log(`[Z-DROP DEBUG GCODE] G1 Z1 F600 #${idx + 1} context:`, context);
+                        });
+                    } else {
+                        console.error('[Z-DROP DEBUG GCODE] ✗ G1 Z1 F600 NOT found in activeEndCode after replacement!');
+                        console.log('[Z-DROP DEBUG GCODE] Checking what was actually replaced...');
+                        // Find the section around Z-Drop Logic
+                        const zDropIndex = activeEndCode.indexOf('Z-Drop Logic');
+                        if (zDropIndex >= 0) {
+                            const section = activeEndCode.substring(zDropIndex, zDropIndex + 500);
+                            console.log('[Z-DROP DEBUG GCODE] Section after replacement:', section);
+                        }
+                    }
+                } else {
+                    console.warn('[Z-DROP DEBUG GCODE] WARNING: No replacement occurred! Conditional logic may not be in end code.');
+                    // Show what we're looking for
+                    const conditionalMatch = activeEndCode.match(/\{if\s*\(?\s*max_layer_z\s*\)?\s*>\s*([\d\.]+)\}/);
+                    if (conditionalMatch) {
+                        console.log('[Z-DROP DEBUG GCODE] Found conditional pattern but regex did not match. Pattern:', conditionalMatch[0]);
+                    } else {
+                        console.log('[Z-DROP DEBUG GCODE] No conditional pattern found in activeEndCode.');
+                    }
+                }
                 // Now replace remaining {max_layer_z} variables (outside conditionals)
                 activeEndCode = activeEndCode.replace(/\{max_layer_z\}/g, maxZHeight.toFixed(2));
                 activeEndCode = activeEndCode.replace(/\{max_layer_z\s*([+\-])\s*([\d\.]+)\}/g, (match, op, val) => {
@@ -7800,15 +7980,23 @@ M400 ; Wait for all motion to complete
                     return result.toFixed(2);
                 });
                 // Evaluate conditionals with fallback value
+                // FIX: Make else block required (not optional) to ensure proper capture in JavaScript regex
                 // Factorian uses {if (max_layer_z ) > 41} with space - handle both formats
-                activeEndCode = activeEndCode.replace(/\{if\s*\(?\s*max_layer_z\s*\)?\s*>\s*([\d\.]+)\}([\s\S]*?)(?:\{else\}([\s\S]*?))?\{endif\}/g, (match, threshold, ifBlock, elseBlock) => {
+                const beforeReplaceGcodeFallback = activeEndCode;
+                activeEndCode = activeEndCode.replace(/\{if\s*\(?\s*max_layer_z\s*\)?\s*>\s*([\d\.]+)\}([\s\S]*?)\{else\}([\s\S]*?)\{endif\}/g, (match, threshold, ifBlock, elseBlock) => {
+                    console.log('[Z-DROP DEBUG GCODE FALLBACK] Conditional logic match found!');
+                    console.log('[Z-DROP DEBUG GCODE FALLBACK] Threshold:', threshold);
+                    console.log('[Z-DROP DEBUG GCODE FALLBACK] maxZHeight:', maxZHeight);
+                    console.log('[Z-DROP DEBUG GCODE FALLBACK] elseBlock:', elseBlock.substring(0, 50));
+                    
                     const thresholdNum = parseFloat(threshold);
                     if (isNaN(thresholdNum)) {
-                        if (DEBUG_MODE) console.error(`Invalid threshold in conditional: ${match}`);
+                        console.error('[Z-DROP DEBUG GCODE FALLBACK] Invalid threshold:', match);
                         return match;
                     }
                     if (maxZHeight > thresholdNum) {
-                        return ifBlock.replace(/\{max_layer_z\}/g, maxZHeight.toFixed(2))
+                        // Don't trim - preserve newlines from template structure
+                        const result = ifBlock.replace(/\{max_layer_z\}/g, maxZHeight.toFixed(2))
                                      .replace(/\{max_layer_z\s*([+\-])\s*([\d\.]+)\}/g, (m, op, val) => {
                                          const numVal = parseFloat(val);
                                          if (isNaN(numVal)) {
@@ -7817,9 +8005,14 @@ M400 ; Wait for all motion to complete
                                          }
                                          const result = op === '+' ? maxZHeight + numVal : maxZHeight - numVal;
                                          return result.toFixed(2);
-                                     }).trim();
+                                     });
+                        console.log('[Z-DROP DEBUG GCODE FALLBACK] Using IF block, result:', result);
+                        return result;
                     } else {
-                        return elseBlock ? elseBlock.replace(/\{max_layer_z\}/g, maxZHeight.toFixed(2))
+                        // elseBlock is now guaranteed to be captured (not optional in regex)
+                        console.log('[Z-DROP DEBUG GCODE FALLBACK] Using ELSE block');
+                        // Don't trim - preserve newlines from template structure
+                        const result = elseBlock.replace(/\{max_layer_z\}/g, maxZHeight.toFixed(2))
                                                   .replace(/\{max_layer_z\s*([+\-])\s*([\d\.]+)\}/g, (m, op, val) => {
                                                       const numVal = parseFloat(val);
                                                       if (isNaN(numVal)) {
@@ -7828,9 +8021,16 @@ M400 ; Wait for all motion to complete
                                                       }
                                                       const result = op === '+' ? maxZHeight + numVal : maxZHeight - numVal;
                                                       return result.toFixed(2);
-                                                  }).trim() : '';
+                                                  });
+                        console.log('[Z-DROP DEBUG GCODE FALLBACK] ELSE block result:', result);
+                        return result;
                     }
                 });
+                if (beforeReplaceGcodeFallback !== activeEndCode) {
+                    console.log('[Z-DROP DEBUG GCODE FALLBACK] Replacement occurred!');
+                } else {
+                    console.warn('[Z-DROP DEBUG GCODE FALLBACK] WARNING: No replacement occurred!');
+                }
                 // Show warning to user
                 showStatus("validationWarning", "warning", 
                     "Warning: Could not extract model height (max_z_height) from G-code header. " +
@@ -8067,6 +8267,18 @@ M400 ; Wait for all motion to complete
                 }
                 
                 // Add end code (push-off)
+                // DEBUG: Check if G1 Z1 F600 is still in activeEndCode before pushing
+                if (activeEndCode.includes('G1 Z1 F600')) {
+                    console.log('[PROCESS3MF DEBUG] ✓ G1 Z1 F600 STILL in activeEndCode before parts.push()');
+                } else {
+                    console.error('[PROCESS3MF DEBUG] ✗ G1 Z1 F600 MISSING from activeEndCode before parts.push()!');
+                    // Find Z-Drop Logic section
+                    const zDropIndex = activeEndCode.indexOf('Z-Drop Logic');
+                    if (zDropIndex >= 0) {
+                        const section = activeEndCode.substring(zDropIndex, zDropIndex + 500);
+                        console.log('[PROCESS3MF DEBUG] Section around Z-Drop Logic:', section);
+                    }
+                }
                 parts.push(activeEndCode);
                 parts.push('\n');
             }
@@ -8078,6 +8290,21 @@ M400 ; Wait for all motion to complete
             
             // Replace G-code in zip
             const modifiedGcode = parts.join('\n');
+            
+            // DEBUG: Check if G1 Z1 F600 is in the final modifiedGcode
+            const g1Z1Count = (modifiedGcode.match(/G1\s+Z1\s+F600/g) || []).length;
+            if (g1Z1Count > 0) {
+                console.log(`[PROCESS3MF DEBUG] ✓ G1 Z1 F600 found in final modifiedGcode (${g1Z1Count} occurrences)`);
+            } else {
+                console.error('[PROCESS3MF DEBUG] ✗ G1 Z1 F600 MISSING from final modifiedGcode!');
+                // Find first Z-Drop Logic section
+                const zDropIndex = modifiedGcode.indexOf('Z-Drop Logic');
+                if (zDropIndex >= 0) {
+                    const section = modifiedGcode.substring(zDropIndex, zDropIndex + 500);
+                    console.log('[PROCESS3MF DEBUG] Section around first Z-Drop Logic in modifiedGcode:', section);
+                }
+            }
+            
             zip.file(gcodePath, modifiedGcode);
             
             // Generate new 3MF file
@@ -8699,7 +8926,7 @@ G0 X{first_layer_center_no_wipe_tower[0]} F12000 ; Align nozzle with model cente
 
 ;===== Z-Drop Logic (41mm Rule) =====
 ; Factorian's exact conditional from End_A1.txt lines 175-179: IF (max_layer_z ) > 41 THEN Z = max_layer_z - 40 ELSE Z = 1.0
-; Note: Factorian uses {if (max_layer_z ) > 41} with space - our regex handles both formats
+; Note: Factorian uses conditional logic with space after max_layer_z - our regex handles this format
 {if (max_layer_z ) > 41}
     G1 Z{max_layer_z - 40} F600
 {else}
