@@ -944,6 +944,17 @@
                 </small>
             </div>
         </div>
+        <div class="row" style="margin-top: 16px;">
+            <div class="col">
+                <label for="speedMode">Speed Mode</label>
+                <select id="speedMode" class="input-field" onchange="saveSettings()">
+                    <option value="100" selected>Standard (100%)</option>
+                    <option value="124">Sport (124%)</option>
+                    <option value="166">Ludicrous (166%)</option>
+                </select>
+                <p class="help-text" style="margin-top: 4px; margin-bottom: 0; font-size: 0.75rem; color: var(--muted);">Sets the print speed for each loop.</p>
+            </div>
+        </div>
 
         <div style="background: var(--input); padding: 16px; border-radius: 10px; border-left: 4px solid var(--accent); margin-top: 16px;">
             <div class="checkbox-container">
@@ -1426,6 +1437,14 @@
                         <ul>
                             <li>Set the number of loops (how many times to print your model)</li>
                             <li>Maximum: 1000 loops (recommended maximum: 50 loops to avoid memory issues)</li>
+                            <li><strong>Speed Mode:</strong> Select print speed for each loop
+                                <ul>
+                                    <li>Standard (100%): Normal print speed (default)</li>
+                                    <li>Sport (124%): Faster print speed</li>
+                                    <li>Ludicrous (166%): Maximum print speed</li>
+                                    <li>Speed is automatically reset to 100% during push-off sequences and at the end of the print job for safety</li>
+                                </ul>
+                            </li>
                             <li><strong>P1/P1S/X1/X1C:</strong> The program automatically detects your model's placement (Left, Center, or Right)</li>
                             <li><strong>A1:</strong> The program automatically calculates Y-axis push position using Factorian's 41mm rule</li>
                             <li>You can view the detected placement in the bed preview below</li>
@@ -1548,7 +1567,8 @@
                             <li><strong>X1/X1C:</strong> Includes M190 cooldown, cutter sequence, dynamic push, and end sound</li>
                         </ul>
                     </li>
-                    <li><strong>Preserves all settings</strong> - All temperatures, speeds, and other settings from your original file are maintained</li>
+                    <li><strong>Preserves all settings</strong> - All temperatures, speeds, and other settings from your original file are maintained (Speed Mode overrides print speed during loops)</li>
+                    <li><strong>Resets speed for safety</strong> - Automatically resets print speed to 100% during push-off sequences and at the end of the entire print job</li>
                     <li><strong>Adds metadata watermark (G-code only)</strong> - Includes Looprint signature with GitHub link in G-code comments (not printed on the model)</li>
                 </ol>
             </div>
@@ -4817,6 +4837,11 @@ M400 ; Wait for all motion to complete
             if (enableA1NegativeZ) {
                 localStorage.setItem('looprint_enableA1NegativeZ', enableA1NegativeZ.checked ? 'true' : 'false');
             }
+            // Save speed mode
+            const speedModeInput = document.getElementById('speedMode');
+            if (speedModeInput) {
+                localStorage.setItem('looprint_speedMode', speedModeInput.value);
+            }
         } catch (e) {
             // localStorage might not be available (e.g., private browsing mode)
             // This is handled gracefully - settings just won't persist
@@ -6170,6 +6195,12 @@ M400 ; Wait for all motion to complete
             sweepZInput.value = defaultSweepZ;
         }
         
+        // Reset Speed Mode to default (Standard 100%)
+        const speedModeInput = document.getElementById("speedMode");
+        if (speedModeInput) {
+            speedModeInput.value = "100";
+        }
+        
         // Update sweep settings visibility
         toggleSweepSettings();
         
@@ -6187,6 +6218,7 @@ M400 ; Wait for all motion to complete
             localStorage.removeItem('looprint_enableSweep');
             localStorage.removeItem('looprint_sweepSpeed');
             localStorage.removeItem('looprint_sweepZ');
+            localStorage.removeItem('looprint_speedMode');
         } catch (e) {
             // localStorage might not be available (e.g., private browsing mode)
             // This is handled gracefully
@@ -6637,6 +6669,16 @@ M400 ; Wait for all motion to complete
                     if (DEBUG_MODE) console.warn("Factorian End Code marker not found. Looping entire file without safely deleting end code.");
                 }
 
+                // CRITICAL FIX: Extract original T command BEFORE splitting (original start code is removed during split)
+                // This ensures we use the correct T0/T1/etc from the original file instead of T255 from end code
+                let originalToolCommand = null;
+                const executableBlockStart = printGcodeOnly.indexOf('; EXECUTABLE_BLOCK_START');
+                if (executableBlockStart !== -1) {
+                    // Extract from the original executable block (before splitting)
+                    const originalExecutableBlock = printGcodeOnly.substring(executableBlockStart);
+                    originalToolCommand = extractOriginalToolCommand(originalExecutableBlock);
+                }
+                
                 // Parse G-code structure (same logic as 3MF)
                 const gcodeStructure = parseGcodeStructure(printGcodeOnly);
                 const gcodeHeader = gcodeStructure.header;
@@ -6647,6 +6689,25 @@ M400 ; Wait for all motion to complete
                 
                 // Extract variable values from CONFIG_BLOCK or G-code
                 const variableValues = extractVariableValues(baseGcode, gcodeConfig);
+                
+                // Store the extracted original tool command
+                if (originalToolCommand) {
+                    variableValues['originalToolCommand'] = originalToolCommand;
+                    if (DEBUG_MODE) console.log(`[T0 FIX] Preserved original tool command: T${originalToolCommand}`);
+                } else {
+                    // Fallback: try to extract from split structure (may not work if start code was removed)
+                    if (typeof printGcodeExecutable === 'object' && printGcodeExecutable.setup) {
+                        originalToolCommand = extractOriginalToolCommand(printGcodeExecutable.setup + (printGcodeExecutable.print || ''));
+                    } else if (typeof printGcodeExecutable === 'string') {
+                        originalToolCommand = extractOriginalToolCommand(printGcodeExecutable);
+                    }
+                    if (originalToolCommand) {
+                        variableValues['originalToolCommand'] = originalToolCommand;
+                        if (DEBUG_MODE) console.log(`[T0 FIX] Preserved original tool command (fallback): T${originalToolCommand}`);
+                    } else {
+                        if (DEBUG_MODE) console.warn(`[T0 FIX] Could not extract original tool command - will use initial_extruder`);
+                    }
+                }
                 
                 // Replace variables in start code template with actual values
                 const startCodeTemplate = getStartCodeTemplate();
@@ -6691,6 +6752,7 @@ M400 ; Wait for all motion to complete
                         parts.push('\n');
                         
                         // Add start code for each loop (AFTER FEATURE: Custom, BEFORE print G-code)
+                        // Use Factorian's logic 100% - full start code with AMS sequence in every loop
                         parts.push(startCodeWithVars);
                         parts.push('\n');
                         
@@ -6705,6 +6767,10 @@ M400 ; Wait for all motion to complete
                                     parts.push('\n');
                                 }
                             }
+                            // Set speed mode before print G-code
+                            const speedModeInput = document.getElementById('speedMode');
+                            const speedMode = speedModeInput ? parseInt(speedModeInput.value) || 100 : 100;
+                            parts.push(`M220 S${speedMode} ; Set speed mode\n`);
                             parts.push(printGcodeExecutable.print);
                             parts.push('\n');
                         }
@@ -6713,20 +6779,27 @@ M400 ; Wait for all motion to complete
                         const printGcodeStr = typeof printGcodeExecutable === 'string' ? printGcodeExecutable : String(printGcodeExecutable);
                         if (!printGcodeStr.includes('machine: P1S') && !printGcodeStr.includes('FactorianDesigns')) {
                             // Original start code not found, safe to add
+                            // Use Factorian's logic 100% - full start code with AMS sequence in every loop
                             parts.push(startCodeWithVars);
                             parts.push('\n');
                         }
+                        // Set speed mode before print G-code
+                        const speedModeInputFallback = document.getElementById('speedMode');
+                        const speedModeFallback = speedModeInputFallback ? parseInt(speedModeInputFallback.value) || 100 : 100;
+                        parts.push(`M220 S${speedModeFallback} ; Set speed mode\n`);
                         parts.push(printGcodeStr);
                         parts.push('\n');
                     }
                     
                     // Add end code after each loop
+                    // Use Factorian's logic 100% - full end code with unload sequence in every loop
                     parts.push(activeEndCode);
                     parts.push('\n');
                 }
 
                 updateProgress(95, "Finalizing file...");
                 parts.push(`; >>> END OF PRINT LOOPS <<<`);
+                parts.push(`M220 S100 ; Reset to standard speed\n`);
                 parts.push(`; ===== ${LOOPRINT_SIGNATURE} (End) =====`);
 
                 // Build file efficiently - use Blob for large files to avoid string length limits
@@ -7146,6 +7219,60 @@ M400 ; Wait for all motion to complete
     }
     
     /**
+     * Extracts the original T (tool) command from the original start code
+     * This is used to preserve the correct extruder number (T0, T1, etc.) instead of using T255 from end code
+     * @param {string} executableContent - The executable block content (between FEATURE: Custom and print start)
+     * @returns {string|null} The original T command value (e.g., "0", "1") or null if not found
+     */
+    function extractOriginalToolCommand(executableContent) {
+        if (!executableContent) return null;
+        
+        // Find FEATURE: Custom marker
+        const featureIndex = executableContent.indexOf('; FEATURE: Custom');
+        if (featureIndex === -1) return null;
+        
+        // Get the part after FEATURE: Custom (this contains the original start code)
+        const afterFeature = executableContent.substring(featureIndex + '; FEATURE: Custom'.length);
+        
+        // Find where the original start code ends (where print starts)
+        // Look for layer markers or "Start Code End" marker
+        const startCodeEndMarker = /; =+.*Start Code End.*=+/i;
+        const startCodeEndMatch = afterFeature.match(startCodeEndMarker);
+        const startCodeEndRegex = /; CHANGE_LAYER|;LAYER_CHANGE|; layer num\/total_layer_count|; layer |;Z_HEIGHT|;LAYER_NUM|; GEOMETRY_START/i;
+        
+        let originalStartCode = '';
+        if (startCodeEndMatch) {
+            // Extract original start code (between FEATURE: Custom and "Start Code End")
+            originalStartCode = afterFeature.substring(0, startCodeEndMatch.index);
+        } else {
+            const splitMatch = afterFeature.match(startCodeEndRegex);
+            if (splitMatch) {
+                originalStartCode = afterFeature.substring(0, splitMatch.index);
+            } else {
+                // Fallback: use first 5000 chars (should be enough for start code)
+                originalStartCode = afterFeature.substring(0, 5000);
+            }
+        }
+        
+        // Extract T command from original start code (ignore T255, T1000, and temperature values)
+        // CRITICAL: Only accept T0-T3 (extruder numbers). Ignore T140, T220, etc. (temperatures in G28 Z P0 T140)
+        const tMatches = [...originalStartCode.matchAll(/T(\d+)/g)];
+        for (const match of tMatches) {
+            const tValue = match[1];
+            const tNum = parseInt(tValue, 10);
+            // Only accept T0-T3 (extruder numbers)
+            // Skip T255 (empty tool), T1000 (park command), and any value >= 100 (temperatures)
+            if (tNum >= 0 && tNum < 4) {
+                if (DEBUG_MODE) console.log(`[T0 FIX] Extracted original tool command from start code: T${tValue}`);
+                return tValue;
+            }
+        }
+        
+        if (DEBUG_MODE) console.warn('[T0 FIX] Could not extract original tool command from start code');
+        return null;
+    }
+    
+    /**
      * Gets a variable value from configMap, handling arrays and indices
      * @param {Object} configMap - Parsed CONFIG_BLOCK map
      * @param {string} varName - Variable name
@@ -7270,8 +7397,24 @@ M400 ; Wait for all motion to complete
         }
         
         if (!vars['initial_extruder'] || vars['initial_extruder'] === '0') {
-            const tMatch = gcodeContent.match(/T(\d+)/);
-            if (tMatch) vars['initial_extruder'] = tMatch[1];
+            // CRITICAL FIX: Ignore T255 (empty tool/unload command) when searching for initial_extruder
+            // T255 is used in end code for filament unload and should NOT be used as initial_extruder
+            // Search for T commands but exclude T255
+            const tMatches = [...gcodeContent.matchAll(/T(\d+)/g)];
+            for (const match of tMatches) {
+                const tValue = match[1];
+                // Skip T255 (empty tool) and T1000 (park command) - these are not extruder numbers
+                if (tValue !== '255' && tValue !== '1000') {
+                    vars['initial_extruder'] = tValue;
+                    if (DEBUG_MODE) console.log(`[T0 FIX] Found initial_extruder from T command: T${tValue}`);
+                    break;
+                }
+            }
+            // If still not found, use default '0'
+            if (!vars['initial_extruder'] || vars['initial_extruder'] === '0') {
+                vars['initial_extruder'] = '0';
+                if (DEBUG_MODE) console.warn('[T0 FIX] Could not find valid T command (excluding T255/T1000), using default: 0');
+            }
         }
         
         // CRITICAL: Ensure bed_temperature and bed_temperature_initial_layer have values for conditional evaluation
@@ -7380,38 +7523,62 @@ M400 ; Wait for all motion to complete
             }
         });
         
+        // CRITICAL FIX: Get original tool command value FIRST (before expressions)
+        // This ensures expressions use the correct value instead of getting "140" or "255"
+        const initialExtruderForExpressions = vars['originalToolCommand'] || vars['initial_extruder'] || '0';
+        
+        // CRITICAL: Replace [initial_no_support_extruder] in expressions BEFORE processing expressions
+        // This prevents expressions like {filament_max_volumetric_speed[initial_no_support_extruder]/2.4053*60}
+        // from becoming {filament_max_volumetric_speed140/2.4053*60}
+        // We do this by temporarily replacing [initial_no_support_extruder] in expressions with the numeric value
+        result = result.replace(/\{([^}]*)\[initial_no_support_extruder\]([^}]*)\}/g, (match, before, after) => {
+            return `{${before}[${initialExtruderForExpressions}]${after}}`;
+        });
+        
         // STEP 2: Replace {braces} variables (expressions) - AFTER conditionals but BEFORE [brackets]
         // Use default if not found (should not happen due to DEFAULTS, but safety check)
         const nozzleTemp = parseFloat(vars['nozzle_temperature_initial_layer'] || '220');
         if (!isNaN(nozzleTemp)) {
             // {nozzle_temperature_initial_layer[initial_extruder]-20}
             result = result.replace(/\{nozzle_temperature_initial_layer\[initial_extruder\]-20\}/g, (nozzleTemp - 20).toString());
-            // {nozzle_temperature_initial_layer[initial_no_support_extruder]-20}
-            result = result.replace(/\{nozzle_temperature_initial_layer\[initial_no_support_extruder\]-20\}/g, (nozzleTemp - 20).toString());
+            // {nozzle_temperature_initial_layer[0]-20} (after [initial_no_support_extruder] replacement)
+            result = result.replace(/\{nozzle_temperature_initial_layer\[(\d+)\]-20\}/g, (nozzleTemp - 20).toString());
             // {nozzle_temperature_initial_layer[initial_extruder]} (without -20)
             result = result.replace(/\{nozzle_temperature_initial_layer\[initial_extruder\]\}/g, nozzleTemp.toString());
+            // {nozzle_temperature_initial_layer[0]} (after [initial_no_support_extruder] replacement)
+            result = result.replace(/\{nozzle_temperature_initial_layer\[(\d+)\]\}/g, nozzleTemp.toString());
         }
         
         // Replace filament_max_volumetric_speed expression
         // Pattern: {filament_max_volumetric_speed[initial_extruder]/2.4053*60}
+        // CRITICAL: Also handle {filament_max_volumetric_speed[0]/2.4053*60} after [initial_no_support_extruder] replacement
         if (vars['filament_max_volumetric_speed']) {
             const volumetricSpeed = parseFloat(vars['filament_max_volumetric_speed']);
             if (!isNaN(volumetricSpeed)) {
                 // Calculate: volumetricSpeed / 2.4053 * 60
                 const calculatedValue = Math.round((volumetricSpeed / 2.4053) * 60);
                 result = result.replace(/\{filament_max_volumetric_speed\[initial_extruder\]\/2\.4053\*60\}/g, calculatedValue.toString());
+                // Handle {filament_max_volumetric_speed[0]/2.4053*60} after [initial_no_support_extruder] replacement
+                result = result.replace(/\{filament_max_volumetric_speed\[(\d+)\]\/(2\.4053|2\.4053)\*60\}/g, calculatedValue.toString());
                 // Also handle without [initial_extruder] if present
                 result = result.replace(/\{filament_max_volumetric_speed\/2\.4053\*60\}/g, calculatedValue.toString());
             } else {
                 // Fallback: use safe default speed F1200
                 result = result.replace(/\{filament_max_volumetric_speed\[initial_extruder\]\/2\.4053\*60\}/g, '1200');
+                result = result.replace(/\{filament_max_volumetric_speed\[(\d+)\]\/(2\.4053|2\.4053)\*60\}/g, '1200');
                 result = result.replace(/\{filament_max_volumetric_speed\/2\.4053\*60\}/g, '1200');
             }
         } else {
             // Fallback: use safe default speed F1200
             result = result.replace(/\{filament_max_volumetric_speed\[initial_extruder\]\/2\.4053\*60\}/g, '1200');
+            result = result.replace(/\{filament_max_volumetric_speed\[(\d+)\]\/(2\.4053|2\.4053)\*60\}/g, '1200');
             result = result.replace(/\{filament_max_volumetric_speed\/2\.4053\*60\}/g, '1200');
         }
+        
+        // CRITICAL FIX: Replace [initial_no_support_extruder] in expressions BEFORE processing expressions
+        // This prevents expressions like {filament_max_volumetric_speed[initial_no_support_extruder]/2.4053*60}
+        // from becoming {filament_max_volumetric_speed140/2.4053*60}
+        result = result.replace(/\[initial_no_support_extruder\]/g, initialExtruderForExpressions);
         
         // Handle other mathematical expressions in {braces}
         // Pattern: {expression} where expression can contain variables and math
@@ -7420,12 +7587,15 @@ M400 ; Wait for all motion to complete
         result = result.replace(/\{outer_wall_volumetric_speed[^}]*\}/g, '1200'); // Replace with safe default
         
         // Replace nozzle_temperature_range_high
+        // CRITICAL: Also handle {nozzle_temperature_range_high[0]} after [initial_no_support_extruder] replacement
         if (vars['nozzle_temperature_range_high']) {
             result = result.replace(/\{nozzle_temperature_range_high\[initial_extruder\]\}/g, vars['nozzle_temperature_range_high']);
+            result = result.replace(/\{nozzle_temperature_range_high\[(\d+)\]\}/g, vars['nozzle_temperature_range_high']);
         } else {
             // Fallback: use nozzle_temperature_initial_layer + 20 as safe default
             const defaultRangeHigh = vars['nozzle_temperature_initial_layer'] ? (parseInt(vars['nozzle_temperature_initial_layer'], 10) + 20).toString() : '240';
             result = result.replace(/\{nozzle_temperature_range_high\[initial_extruder\]\}/g, defaultRangeHigh);
+            result = result.replace(/\{nozzle_temperature_range_high\[(\d+)\]\}/g, defaultRangeHigh);
         }
         
         // Replace {+0.0} constant (not a variable, but ensure it's handled)
@@ -7469,28 +7639,59 @@ M400 ; Wait for all motion to complete
         const bedTempFinal = vars['bed_temperature_initial_layer_single'] || '60';
         result = result.replace(/\[bed_temperature_initial_layer_single\]/g, bedTempFinal);
         
-        const initialExtruderFinal = vars['initial_extruder'] || '0';
+        // CRITICAL FIX: Use preserved original tool command if available, otherwise use extracted initial_extruder
+        // This ensures we use the correct T0/T1/etc from the original start code, not T255 from end code
+        const initialExtruderFinal = vars['originalToolCommand'] || vars['initial_extruder'] || '0';
         result = result.replace(/\[initial_extruder\]/g, initialExtruderFinal);
         
         // A1-specific: Replace [initial_no_support_extruder] (maps to initial_extruder)
+        // CRITICAL: Also use preserved original tool command here to prevent M620 S255A and T255 errors
         result = result.replace(/\[initial_no_support_extruder\]/g, initialExtruderFinal);
         
         // A1-specific: Replace {nozzle_temperature_initial_layer[initial_no_support_extruder]} expressions
+        // NOTE: [initial_no_support_extruder] is already replaced above in expressions, so these patterns should now use numeric values
+        // But we still need to handle any remaining ones that weren't caught by the earlier replacement
         if (!isNaN(nozzleTemp)) {
+            // Handle any remaining patterns with [initial_no_support_extruder] (shouldn't happen after fix above, but safety)
             result = result.replace(/\{nozzle_temperature_initial_layer\[initial_no_support_extruder\]\}/g, nozzleTemp.toString());
             result = result.replace(/\{nozzle_temperature_initial_layer\[initial_no_support_extruder\]-20\}/g, (nozzleTemp - 20).toString());
             result = result.replace(/\{nozzle_temperature_initial_layer\[initial_no_support_extruder\]-50\}/g, (nozzleTemp - 50).toString());
+            // Handle patterns with numeric values after replacement (e.g., {nozzle_temperature_initial_layer[0]})
+            result = result.replace(/\{nozzle_temperature_initial_layer\[(\d+)\]\}/g, nozzleTemp.toString());
+            result = result.replace(/\{nozzle_temperature_initial_layer\[(\d+)\]-20\}/g, (nozzleTemp - 20).toString());
+            result = result.replace(/\{nozzle_temperature_initial_layer\[(\d+)\]-50\}/g, (nozzleTemp - 50).toString());
+        }
+        
+        // A1-specific: Replace {nozzle_temperature_range_high[initial_no_support_extruder]} expressions
+        // NOTE: [initial_no_support_extruder] is already replaced above in expressions
+        if (vars['nozzle_temperature_range_high']) {
+            // Handle any remaining patterns with [initial_no_support_extruder] (shouldn't happen after fix above, but safety)
+            result = result.replace(/\{nozzle_temperature_range_high\[initial_no_support_extruder\]\}/g, vars['nozzle_temperature_range_high']);
+            // Handle patterns with numeric values after replacement (e.g., {nozzle_temperature_range_high[0]})
+            result = result.replace(/\{nozzle_temperature_range_high\[(\d+)\]\}/g, vars['nozzle_temperature_range_high']);
+        } else {
+            // Fallback: use nozzle_temperature_initial_layer + 20 as safe default
+            const defaultRangeHigh = vars['nozzle_temperature_initial_layer'] ? (parseInt(vars['nozzle_temperature_initial_layer'], 10) + 20).toString() : '240';
+            result = result.replace(/\{nozzle_temperature_range_high\[initial_no_support_extruder\]\}/g, defaultRangeHigh);
+            result = result.replace(/\{nozzle_temperature_range_high\[(\d+)\]\}/g, defaultRangeHigh);
         }
         
         // A1-specific: Replace {filament_type[initial_no_support_extruder]} and {filament_max_volumetric_speed[initial_no_support_extruder]}
+        // NOTE: [initial_no_support_extruder] is already replaced above in expressions, so these patterns should now use numeric values
         if (vars['filament_type']) {
+            // Handle any remaining patterns with [initial_no_support_extruder] (shouldn't happen after fix above, but safety)
             result = result.replace(/\{filament_type\[initial_no_support_extruder\]\}/g, vars['filament_type']);
+            // Handle patterns with numeric values after replacement (e.g., {filament_type[0]})
+            result = result.replace(/\{filament_type\[(\d+)\]\}/g, vars['filament_type']);
         }
         if (vars['filament_max_volumetric_speed']) {
             const volumetricSpeed = parseFloat(vars['filament_max_volumetric_speed']);
             if (!isNaN(volumetricSpeed)) {
                 const calculatedValue = Math.round((volumetricSpeed / 2.4053) * 60);
+                // Handle any remaining patterns with [initial_no_support_extruder] (shouldn't happen after fix above, but safety)
                 result = result.replace(/\{filament_max_volumetric_speed\[initial_no_support_extruder\]\/2\.4053\*60\}/g, calculatedValue.toString());
+                // Handle patterns with numeric values after replacement (e.g., {filament_max_volumetric_speed[0]/2.4053*60})
+                result = result.replace(/\{filament_max_volumetric_speed\[(\d+)\]\/(2\.4053|2\.4053)\*60\}/g, calculatedValue.toString());
             }
         }
         
@@ -7757,6 +7958,8 @@ M400 ; Wait for all motion to complete
             const gcodeStructure = parseGcodeStructure(gcodeContent);
             const gcodeConfigForEnd = gcodeStructure.config || '';
             const endCodeVars = extractVariableValues(gcodeContent, gcodeConfigForEnd);
+            
+            // Note: originalToolCommand extraction for processGcodeFile is handled later when we parse the structure for start code
             if (DEBUG_MODE) console.log("[DIAG] processGcodeFile: Extracted variable values:", Object.keys(endCodeVars));
             if (currentPrinterModel === 'A1' || currentPrinterModel === 'A1Mini') {
                 if (DEBUG_MODE) console.log("[DIAG] processGcodeFile:", currentPrinterModel, "- endCodeVars['first_layer_center_no_wipe_tower']:", endCodeVars['first_layer_center_no_wipe_tower']);
@@ -8049,6 +8252,16 @@ M400 ; Wait for all motion to complete
             
             // Find where executable block starts (after CONFIG_BLOCK)
             const executableBlockStart = printGcodeOnly.indexOf('; EXECUTABLE_BLOCK_START');
+            
+            // CRITICAL FIX: Extract original T command BEFORE splitting (original start code is removed during split)
+            // This ensures we use the correct T0/T1/etc from the original file instead of T255 from end code
+            let originalToolCommand = null;
+            if (executableBlockStart !== -1) {
+                // Extract from the original executable block (before splitting)
+                const originalExecutableBlock = printGcodeOnly.substring(executableBlockStart);
+                originalToolCommand = extractOriginalToolCommand(originalExecutableBlock);
+            }
+            
             let gcodeHeader = '';
             let gcodeConfig = '';
             let printGcodeExecutable = printGcodeOnly;
@@ -8185,6 +8398,25 @@ M400 ; Wait for all motion to complete
             // Extract variable values from CONFIG_BLOCK or G-code
             const variableValues = extractVariableValues(gcodeContent, gcodeConfig);
             
+            // Store the extracted original tool command (extracted BEFORE splitting)
+            if (originalToolCommand) {
+                variableValues['originalToolCommand'] = originalToolCommand;
+                if (DEBUG_MODE) console.log(`[T0 FIX] Preserved original tool command: T${originalToolCommand}`);
+            } else {
+                // Fallback: try to extract from split structure (may not work if start code was removed)
+                if (typeof printGcodeExecutable === 'object' && printGcodeExecutable.setup) {
+                    originalToolCommand = extractOriginalToolCommand(printGcodeExecutable.setup + (printGcodeExecutable.print || ''));
+                } else if (typeof printGcodeExecutable === 'string') {
+                    originalToolCommand = extractOriginalToolCommand(printGcodeExecutable);
+                }
+                if (originalToolCommand) {
+                    variableValues['originalToolCommand'] = originalToolCommand;
+                    if (DEBUG_MODE) console.log(`[T0 FIX] Preserved original tool command (fallback): T${originalToolCommand}`);
+                } else {
+                    if (DEBUG_MODE) console.warn(`[T0 FIX] Could not extract original tool command - will use initial_extruder`);
+                }
+            }
+            
             // Replace variables in start code template with actual values
             const startCodeTemplate = getStartCodeTemplate();
             const startCodeWithVars = replaceStartCodeVariables(startCodeTemplate, variableValues);
@@ -8228,7 +8460,7 @@ M400 ; Wait for all motion to complete
                     parts.push('\n');
                     
                     // Add start code for each loop (AFTER FEATURE: Custom, BEFORE print G-code)
-                    // Use startCodeWithVars which has variables replaced with actual values
+                    // Use Factorian's logic 100% - full start code with AMS sequence in every loop
                     parts.push(startCodeWithVars);
                     parts.push('\n');
                     
@@ -8246,6 +8478,10 @@ M400 ; Wait for all motion to complete
                                 parts.push('\n');
                             }
                         }
+                        // Set speed mode before print G-code
+                        const speedModeInputGcode = document.getElementById('speedMode');
+                        const speedModeGcode = speedModeInputGcode ? parseInt(speedModeInputGcode.value) || 100 : 100;
+                        parts.push(`M220 S${speedModeGcode} ; Set speed mode\n`);
                         parts.push(printGcodeExecutable.print);
                         parts.push('\n');
                     }
@@ -8255,12 +8491,16 @@ M400 ; Wait for all motion to complete
                     const printGcodeStr = typeof printGcodeExecutable === 'string' ? printGcodeExecutable : String(printGcodeExecutable);
                     if (!printGcodeStr.includes('machine: P1S') && !printGcodeStr.includes('FactorianDesigns')) {
                         // Original start code not found, safe to add
-                        parts.push(printGcodeExecutable);
-                        parts.push('\n');
                         parts.push(startCodeWithVars);
                         parts.push('\n');
+                        // Set speed mode before print G-code (fallback path)
+                        const speedModeInputGcodeFallback = document.getElementById('speedMode');
+                        const speedModeGcodeFallback = speedModeInputGcodeFallback ? parseInt(speedModeInputGcodeFallback.value) || 100 : 100;
+                        parts.push(`M220 S${speedModeGcodeFallback} ; Set speed mode\n`);
+                        parts.push(printGcodeExecutable);
+                        parts.push('\n');
                     } else {
-                        // Start code already present, don't duplicate
+                        // Start code already present in file - can't insert speed mode in middle, skip it
                         parts.push(printGcodeExecutable);
                         parts.push('\n');
                     }
@@ -8279,11 +8519,15 @@ M400 ; Wait for all motion to complete
                         console.log('[PROCESS3MF DEBUG] Section around Z-Drop Logic:', section);
                     }
                 }
+                
+                // Add end code after each loop
+                // Use Factorian's logic 100% - full end code with unload sequence in every loop
                 parts.push(activeEndCode);
                 parts.push('\n');
             }
             
             parts.push(`; >>> END OF PRINT LOOPS <<<`);
+            parts.push(`M220 S100 ; Reset to standard speed\n`);
             parts.push(`; ===== ${LOOPRINT_SIGNATURE} (End) =====`);
             
             updateProgress(95, "Repacking 3MF file...");
@@ -8918,7 +9162,8 @@ M17 X0.8 Y0.8 Z0.5 ; lower motor current to 45% power
         // Note: Pre-Push Wipe happens earlier during filament retraction (End_A1.txt lines 90-94)
         //       and is already included in getA1EndCode() before cooldown sequence
         
-        return `;===== CRITICAL: Align nozzle X-position with model center before push =====
+        return `M220 S100 ; Reset to standard speed for safe push-off
+;===== CRITICAL: Align nozzle X-position with model center before push =====
 ; After cooldown sequence, toolhead is at X-48 (A1) or X-13 (A1 Mini). We must move it to model center
 ; before the bed moves forward (Y-0.5), otherwise the push will miss the model.
 ; (This alignment move is not in End_A1.txt but is critical for push accuracy)
@@ -9042,6 +9287,86 @@ M400 P100
 G1 Y200 F100			; part release using the x gantry
 G1 Y262 F2000			; reset position
 G1 Z{max_layer_z +5}	; lift Z into positive again dont erase`;
+    }
+    
+    /**
+     * Removes AMS material switching sequence from A1/A1Mini start code
+     * This is used for subsequent loops in looped prints where material is already loaded
+     * 
+     * The AMS sequence pattern (M620...M621 block):
+     * - M620 M (enable remap)
+     * - M620 S[initial_no_support_extruder]A (switch material if AMS exist)
+     * - M620.1 E F... T... (flush sequence - the "poop" part)
+     * - M621 S[initial_no_support_extruder]A (end material switch)
+     * 
+     * @param {string} startCode - The start code to process
+     * @returns {string} - Start code with AMS sequence removed
+     */
+    function removeA1AMSSequence(startCode) {
+        if (!startCode) return startCode;
+        
+        // Pattern to match the AMS material switching sequence (M620...M621 block)
+        // This handles both variable format [initial_no_support_extruder] and replaced format (0, 1, 2, 3)
+        // Uses non-greedy matching to stop at first M621 S[...]A
+        // Pattern matches from "M620 M" to "M621 S[...]A"
+        
+        // Most flexible pattern: Match M620 M...M621 S[...]A (handles any format)
+        // This matches:
+        // - Variable format: M620 S[initial_no_support_extruder]A ... M621 S[initial_no_support_extruder]A
+        // - Replaced format: M620 S0A ... M621 S0A (or S1A, S2A, etc.)
+        const amsPattern = /M620 M[\s\S]*?M621 S[^\s\n]+\s*\n?/g;
+        
+        let modifiedCode = startCode.replace(amsPattern, '');
+        
+        if (DEBUG_MODE && modifiedCode !== startCode) {
+            const removedLength = startCode.length - modifiedCode.length;
+            console.log(`[A1 AMS SEQUENCE] Removed AMS material switching sequence (${removedLength} chars)`);
+        } else if (DEBUG_MODE && modifiedCode === startCode) {
+            // Check if AMS sequence exists but pattern didn't match
+            if (startCode.includes('M620 M') || startCode.includes('M621 S')) {
+                console.warn('[A1 AMS SEQUENCE] AMS sequence pattern found but regex did not match - may need pattern adjustment');
+            }
+        }
+        
+        return modifiedCode;
+    }
+    
+    /**
+     * Removes filament unload sequence from A1/A1Mini end code
+     * This is used for intermediate loops in looped prints where filament should stay loaded
+     * 
+     * The unload sequence pattern:
+     * - Comment "; pull back filament to AMS"
+     * - M620 S255
+     * - G1 X commands (with various X values and optional F speeds)
+     * - T255
+     * - More G1 X commands (wipe movements)
+     * - M621 S255
+     * 
+     * @param {string} endCode - The end code to process
+     * @returns {string} - End code with unload sequence removed
+     */
+    function removeA1FilamentUnload(endCode) {
+        if (!endCode) return endCode;
+        
+        // Pattern to match the unload sequence from comment to M621 S255
+        // This handles both A1 and A1Mini formats (different X values)
+        // Uses non-greedy matching to stop at M621 S255
+        const unloadPattern = /; pull back filament to AMS[\s\S]*?M621 S255\s*\n?/g;
+        
+        let modifiedCode = endCode.replace(unloadPattern, '');
+        
+        if (DEBUG_MODE && modifiedCode !== endCode) {
+            const removedLength = endCode.length - modifiedCode.length;
+            console.log(`[A1 FILAMENT UNLOAD] Removed unload sequence (${removedLength} chars)`);
+        } else if (DEBUG_MODE && modifiedCode === endCode) {
+            // Check if unload sequence exists but pattern didn't match
+            if (endCode.includes('; pull back filament to AMS') || endCode.includes('M620 S255')) {
+                console.warn('[A1 FILAMENT UNLOAD] Unload sequence pattern found but regex did not match - may need pattern adjustment');
+            }
+        }
+        
+        return modifiedCode;
     }
     
     /**
@@ -9283,7 +9608,8 @@ M18 X Y Z`;
         const pushSpeed = pushSpeedInput ? (parseFloat(pushSpeedInput.value) || DEFAULT_PUSH_SPEED) : DEFAULT_PUSH_SPEED;
         const validatedPushSpeed = Math.max(MIN_PUSH_SPEED, Math.min(MAX_PUSH_SPEED, pushSpeed));
 
-        return `G1 X${xStart} Y254 F600		; move nozzle a little to the side for safety
+        return `M220 S100 ; Reset to standard speed for safe push-off
+G1 X${xStart} Y254 F600		; move nozzle a little to the side for safety
 M400				; Wait all motion done
 ; --- DYNAMIC MULTI-LANE PUSH SYSTEM (Looprint) ---
 ; Model center calculated from G-code: X${xCenter}
