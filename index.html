@@ -6633,11 +6633,45 @@ M400 ; Wait for all motion to complete
                         maxZHeight = null;
                     }
                 }
+
+                // Extract print G-code only (remove existing end code) - MUST be done early
+                const endCodeStartMarker = END_CODE_START_MARKER; 
+                let printGcodeOnly = baseGcode;
+                const endCodeIndex = baseGcode.lastIndexOf(endCodeStartMarker);
+                if (endCodeIndex !== -1) {
+                    printGcodeOnly = baseGcode.substring(0, endCodeIndex).trim();
+                } else {
+                    if (DEBUG_MODE) console.warn("Factorian End Code marker not found. Looping entire file without safely deleting end code.");
+                }
+
+                // Parse G-code structure EARLY so gcodeConfig is available for variable extraction
+                const gcodeStructure = parseGcodeStructure(printGcodeOnly);
+                const gcodeHeader = gcodeStructure.header;
+                const gcodeConfig = gcodeStructure.config || '';
+                const printGcodeExecutable = gcodeStructure.executable;
+                
+                // LOGIC FIREWALL: Strict routing - A1/A1Mini and P1 use completely different end code elements
+                // Get end code element FIRST so activeEndCode is available for variable replacement
+                let endCodeElement;
+                if (currentPrinterModel === 'A1' || currentPrinterModel === 'A1Mini') {
+                    FIREWALL_A1_A1MINI_ONLY('processGcodeFile: end code selection');
+                    endCodeElement = document.getElementById('endA1Code');
+                } else {
+                    // P1/X1: Use direction-based end code elements (both use same push system)
+                    FIREWALL_P1_X1_ONLY('processGcodeFile: end code selection');
+                    endCodeElement = document.getElementById(`end${currentDirection.charAt(0).toUpperCase() + currentDirection.slice(1)}Code`);
+                }
+                if (!endCodeElement) {
+                    setLoadingState(false);
+                    showStatus("validationErrorParse", "error", "Error: Could not find end code element. Please refresh the page.");
+                    return;
+                }
+                let activeEndCode = endCodeElement.value;
                 
                 // Extract first_layer_center_no_wipe_tower for A1 push-off alignment
                 // This is needed for A1 end code template variable replacement
-                if (DEBUG_MODE) console.log("[DIAG] process3MFFile: Extracting variables for printer model:", currentPrinterModel);
-                if (DEBUG_MODE) console.log("[DIAG] process3MFFile: lastDebugData available:", !!lastDebugData, lastDebugData ? {minX: lastDebugData.minX, maxX: lastDebugData.maxX, minY: lastDebugData.minY, maxY: lastDebugData.maxY} : 'N/A');
+                if (DEBUG_MODE) console.log("[DIAG] processGcodeFile: Extracting variables for printer model:", currentPrinterModel);
+                if (DEBUG_MODE) console.log("[DIAG] processGcodeFile: lastDebugData available:", !!lastDebugData, lastDebugData ? {minX: lastDebugData.minX, maxX: lastDebugData.maxX, minY: lastDebugData.minY, maxY: lastDebugData.maxY} : 'N/A');
                 
                 const endCodeVariableValues = extractVariableValues(baseGcode, gcodeConfig);
                 if (DEBUG_MODE) console.log("[DIAG] process3MFFile: Extracted variable values:", Object.keys(endCodeVariableValues));
@@ -6670,23 +6704,6 @@ M400 ; Wait for all motion to complete
                 // Replace first_layer_center_no_wipe_tower in end code
                 activeEndCode = activeEndCode.replace(/\{first_layer_center_no_wipe_tower\[0\]\}/g, firstLayerCenterX);
                 activeEndCode = activeEndCode.replace(/\{first_layer_center_no_wipe_tower\[1\]\}/g, firstLayerCenterY);
-
-                // LOGIC FIREWALL: Strict routing - A1/A1Mini and P1 use completely different end code elements
-                let endCodeElement;
-                if (currentPrinterModel === 'A1' || currentPrinterModel === 'A1Mini') {
-                    FIREWALL_A1_A1MINI_ONLY('process3MFFile: end code selection');
-                    endCodeElement = document.getElementById('endA1Code');
-                } else {
-                    // P1/X1: Use direction-based end code elements (both use same push system)
-                    FIREWALL_P1_X1_ONLY('process3MFFile: end code selection');
-                    endCodeElement = document.getElementById(`end${currentDirection.charAt(0).toUpperCase() + currentDirection.slice(1)}Code`);
-                }
-                if (!endCodeElement) {
-                    setLoadingState(false);
-                    showStatus("validationErrorParse", "error", "Error: Could not find end code element. Please refresh the page.");
-                    return;
-                }
-                let activeEndCode = endCodeElement.value;
                 
                 if (DEBUG_MODE) {
                     console.log("[DIAG] process3MFFile: endCodeElement found:", !!endCodeElement);
@@ -6923,16 +6940,6 @@ M400 ; Wait for all motion to complete
                         "Using fallback value of 50mm. Please verify the generated G-code is correct.");
                 }
 
-                // Extract print G-code only (remove existing end code)
-                const endCodeStartMarker = END_CODE_START_MARKER; 
-                let printGcodeOnly = baseGcode;
-                const endCodeIndex = baseGcode.lastIndexOf(endCodeStartMarker);
-                if (endCodeIndex !== -1) {
-                    printGcodeOnly = baseGcode.substring(0, endCodeIndex).trim();
-                } else {
-                    if (DEBUG_MODE) console.warn("Factorian End Code marker not found. Looping entire file without safely deleting end code.");
-                }
-
                 // CRITICAL FIX: Extract original T command BEFORE splitting (original start code is removed during split)
                 // This ensures we use the correct T0/T1/etc from the original file instead of T255 from end code
                 let originalToolCommand = null;
@@ -6942,12 +6949,6 @@ M400 ; Wait for all motion to complete
                     const originalExecutableBlock = printGcodeOnly.substring(executableBlockStart);
                     originalToolCommand = extractOriginalToolCommand(originalExecutableBlock);
                 }
-                
-                // Parse G-code structure (same logic as 3MF)
-                const gcodeStructure = parseGcodeStructure(printGcodeOnly);
-                const gcodeHeader = gcodeStructure.header;
-                const gcodeConfig = gcodeStructure.config;
-                const printGcodeExecutable = gcodeStructure.executable;
                 
                 updateProgress(60, `Generating ${loops} loops...`);
                 
