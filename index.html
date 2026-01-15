@@ -4141,7 +4141,6 @@ M960 S5 P0 ; turn off logo lamp
             step1Title: "1. Upload File",             step1Help: "Upload a G-code file (directly from slicer) or a 3MF file. Start and end code will be added automatically.",
             validationWarning: "✓ Push direction is automatically detected from model placement.", validationError: "Validation failed: Could not read or parse the file. Please ensure it is a valid G-code or 3MF file.",
             validationErrorLooprint: "Validation failed: This file has already been processed by Looprint. Please upload the original sliced file.",
-            validationErrorFactorian: "Validation failed: This G-code file does not have Factorian's start/end code structure.",
             validationErrorParse: "Validation failed: Could not read or parse the file content. Ensure it is a valid G-code or 3MF file.",
             validationSuccess: "File verified: Valid G-code or 3MF file detected. Start and end code will be added automatically.",
             validationSuccessGcodeFactorian: "✓ File verified: G-code with Factorian Designs templates detected. Start and end code will be added automatically.",
@@ -6935,9 +6934,9 @@ M400 ; Wait for all motion to complete
                 if (DEBUG_MODE) console.log("[DIAG] processGcodeFile: lastDebugData available:", !!lastDebugData, lastDebugData ? {minX: lastDebugData.minX, maxX: lastDebugData.maxX, minY: lastDebugData.minY, maxY: lastDebugData.maxY} : 'N/A');
                 
                 const endCodeVariableValues = extractVariableValues(baseGcode, gcodeConfig);
-                if (DEBUG_MODE) console.log("[DIAG] process3MFFile: Extracted variable values:", Object.keys(endCodeVariableValues));
+                if (DEBUG_MODE) console.log("[DIAG] processGcodeFile: Extracted variable values:", Object.keys(endCodeVariableValues));
                 if (currentPrinterModel === 'A1' || currentPrinterModel === 'A1Mini') {
-                    if (DEBUG_MODE) console.log("[DIAG] process3MFFile:", currentPrinterModel, "- endCodeVariableValues['first_layer_center_no_wipe_tower']:", endCodeVariableValues['first_layer_center_no_wipe_tower']);
+                    if (DEBUG_MODE) console.log("[DIAG] processGcodeFile:", currentPrinterModel, "- endCodeVariableValues['first_layer_center_no_wipe_tower']:", endCodeVariableValues['first_layer_center_no_wipe_tower']);
                 }
                 
                 let firstLayerCenterX = '128'; // Default to bed center
@@ -6967,14 +6966,14 @@ M400 ; Wait for all motion to complete
                 activeEndCode = activeEndCode.replace(/\{first_layer_center_no_wipe_tower\[1\]\}/g, firstLayerCenterY);
                 
                 if (DEBUG_MODE) {
-                    console.log("[DIAG] process3MFFile: endCodeElement found:", !!endCodeElement);
-                    console.log("[DIAG] process3MFFile: endCodeElement.value length:", activeEndCode ? activeEndCode.length : 0);
-                    console.log("[DIAG] process3MFFile: currentPrinterModel:", currentPrinterModel);
+                    console.log("[DIAG] processGcodeFile: endCodeElement found:", !!endCodeElement);
+                    console.log("[DIAG] processGcodeFile: endCodeElement.value length:", activeEndCode ? activeEndCode.length : 0);
+                    console.log("[DIAG] processGcodeFile: currentPrinterModel:", currentPrinterModel);
                 }
                 
                 // CRITICAL: If end code is empty, generate it now (for A1, P1, and X1)
                 if (!activeEndCode || activeEndCode.trim().length === 0) {
-                    if (DEBUG_MODE) console.warn("[DIAG] process3MFFile: End code is empty, generating now for model:", currentPrinterModel);
+                    if (DEBUG_MODE) console.warn("[DIAG] processGcodeFile: End code is empty, generating now for model:", currentPrinterModel);
                     
                     if (currentPrinterModel === 'A1' || currentPrinterModel === 'A1Mini') {
                         // Generate A1/A1Mini end code using current settings
@@ -6987,14 +6986,14 @@ M400 ; Wait for all motion to complete
                             activeEndCode = getA1EndCode(temp, offset, modelCenterY);
                         }
                         endCodeElement.value = activeEndCode;
-                        if (DEBUG_MODE) console.log("[DIAG] process3MFFile: Generated", currentPrinterModel, "end code, length:", activeEndCode.length);
+                        if (DEBUG_MODE) console.log("[DIAG] processGcodeFile: Generated", currentPrinterModel, "end code, length:", activeEndCode.length);
                     } else {
                         // P1/X1: Generate end code for current direction (X1 uses same push system as P1)
                         // First ensure all P1/X1 end codes are generated
                         updateEndCodeTextareas();
                         // Then get the code for current direction
                         activeEndCode = endCodeElement.value;
-                        if (DEBUG_MODE) console.log("[DIAG] process3MFFile: Generated", currentPrinterModel, "end code for direction:", currentDirection, "length:", activeEndCode ? activeEndCode.length : 0);
+                        if (DEBUG_MODE) console.log("[DIAG] processGcodeFile: Generated", currentPrinterModel, "end code for direction:", currentDirection, "length:", activeEndCode ? activeEndCode.length : 0);
                     }
                 }
                 
