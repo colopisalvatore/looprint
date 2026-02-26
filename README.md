@@ -17,6 +17,18 @@ No paywalls.
 
 ---
 
+
+## Frontend structure
+- `index.html`: UI structure and layout markup
+- `src/styles/main.css`: centralized styles
+- `src/js/app.js`: main application flow (G-code/3MF processing)
+- `src/js/components/instructions-modal.js`: reusable modal behavior
+- `src/js/components/translate-widget.js`: reusable Google Translate integration/styling
+
+This layout separates responsibilities and makes incremental refactors safer.
+
+---
+
 ## Supported printers
 - **P1 / P1S**
 - **X1 / X1C**
